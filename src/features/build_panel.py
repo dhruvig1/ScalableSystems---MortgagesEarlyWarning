@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 from pathlib import Path
 
 import duckdb
@@ -99,6 +100,8 @@ def build(parquet: Path, out: Path, threads: int, memory_limit: str, tmp_dir: st
     sources = sorted(p.name.split("=", 1)[1] for p in (parquet / "performance").glob("source=*"))
     for s in sources:
         dest = out / f"source={s}"
+        if dest.exists():
+            shutil.rmtree(dest)  # rebuild cleanly; avoids duplicate files on re-run
         dest.mkdir(parents=True, exist_ok=True)
         con.execute(f"COPY ({panel_sql(s, parquet, g)}) TO '{dest}' "
                     f"(FORMAT PARQUET, COMPRESSION ZSTD, PER_THREAD_OUTPUT true, "

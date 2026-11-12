@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import logging
 import re
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -85,6 +86,8 @@ def convert_file(con, src: Path, kind: str, tag: str, out_root: Path) -> int:
             "ELSE TRY_CAST(NULLIF(TRIM(current_loan_delinquency_status), '') AS INTEGER) "
             "END AS dq_months")
     dest = out_root / kind / f"source={tag}"
+    if dest.exists():
+        shutil.rmtree(dest)  # clear any partial output from an interrupted run
     dest.mkdir(parents=True, exist_ok=True)
     con.execute(f"COPY (SELECT {', '.join(exprs)} FROM {raw}) TO '{dest}' "
                 f"(FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 500000, "
@@ -95,10 +98,12 @@ def convert_file(con, src: Path, kind: str, tag: str, out_root: Path) -> int:
 
 
 def process_zip(zip_path: Path, out_root: Path, threads: int, memory_limit: str,
-                tmp_dir: str | None = None) -> None:
+                tmp_dir: str | None = None, force: bool = False) -> None:
     """Handles both a zip holding the txt files and a yearly zip holding quarterly zips.
 
     Nested zips are extracted and converted one at a time to keep temp disk use low.
+    A quarter that finished is marked in <out>/_done/<tag> and skipped on re-runs
+    unless force=True, so an interrupted multi-year load can simply be restarted.
     """
     with tempfile.TemporaryDirectory(dir=tmp_dir) as tmp:
         with zipfile.ZipFile(zip_path) as z:
@@ -106,16 +111,24 @@ def process_zip(zip_path: Path, out_root: Path, threads: int, memory_limit: str,
             if inner:
                 log.info("%s contains %d nested zips", zip_path.name, len(inner))
                 for n in inner:
+                    mm = re.search(r"(\d{4}Q[1-4])", n)
+                    if mm and not force and (out_root / "_done" / mm.group(1)).exists():
+                        log.info("skip %s (already done)", mm.group(1))
+                        continue
                     z.extract(n, tmp)
                     nested = Path(tmp) / n
-                    process_zip(nested, out_root, threads, memory_limit, tmp_dir)
+                    process_zip(nested, out_root, threads, memory_limit, tmp_dir, force)
                     nested.unlink()
                 return
+            m = re.search(r"(\d{4}(?:Q[1-4])?)", zip_path.stem)
+            if not m:
+                raise ValueError(f"Cannot get year/quarter tag from {zip_path.name}")
+            tag = m.group(1)
+            marker = out_root / "_done" / tag
+            if marker.exists() and not force:
+                log.info("skip %s (already done)", tag)
+                return
             z.extractall(tmp)
-        m = re.search(r"(\d{4}(?:Q[1-4])?)", zip_path.stem)
-        if not m:
-            raise ValueError(f"Cannot get year/quarter tag from {zip_path.name}")
-        tag = m.group(1)
         con = duckdb.connect()
         con.execute(f"SET threads={threads}; SET memory_limit='{memory_limit}';")
         files = [p for p in Path(tmp).rglob("*.txt")]
@@ -127,6 +140,8 @@ def process_zip(zip_path: Path, out_root: Path, threads: int, memory_limit: str,
                                f"got {[p.name for p in files]}")
         convert_file(con, orig[0], "origination", tag, out_root)
         convert_file(con, perf[0], "performance", tag, out_root)  # large; streams to disk
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
 
 
 def main() -> None:
@@ -136,10 +151,11 @@ def main() -> None:
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--memory-limit", default="8GB")
     ap.add_argument("--tmp-dir", default=None, help="where to unzip (needs several GB free)")
+    ap.add_argument("--force", action="store_true", help="redo quarters already marked done")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     for z in sorted(args.zips):
-        process_zip(z, args.out, args.threads, args.memory_limit, args.tmp_dir)
+        process_zip(z, args.out, args.threads, args.memory_limit, args.tmp_dir, args.force)
 
 
 if __name__ == "__main__":

@@ -65,3 +65,28 @@ def test_new_naming(tmp_path):
     n = duckdb.connect().execute(
         f"SELECT COUNT(*) FROM read_parquet('{out}/performance/*/*.parquet')").fetchone()[0]
     assert n == 6
+
+
+def test_rerun_is_idempotent(tmp_path):
+    z = _make_zip(tmp_path)
+    out = tmp_path / "pq4"
+    q = f"SELECT COUNT(*) FROM read_parquet('{out}/performance/*/*.parquet')"
+    process_zip(z, out, threads=1, memory_limit="1GB")
+    n1 = duckdb.connect().execute(q).fetchone()[0]
+    assert (out / "_done" / "2019Q1").exists()
+    process_zip(z, out, threads=1, memory_limit="1GB")            # skipped
+    process_zip(z, out, threads=1, memory_limit="1GB", force=True)  # redone, no duplicates
+    n2 = duckdb.connect().execute(q).fetchone()[0]
+    assert n1 == n2 == 6
+
+
+def test_rerun_after_partial_output(tmp_path):
+    z = _make_zip(tmp_path)
+    out = tmp_path / "pq5"
+    stale = out / "performance" / "source=2019Q1"
+    stale.mkdir(parents=True)
+    (stale / "stale.parquet").write_bytes(b"junk")  # simulates interrupted run
+    process_zip(z, out, threads=1, memory_limit="1GB")
+    n = duckdb.connect().execute(
+        f"SELECT COUNT(*) FROM read_parquet('{out}/performance/*/*.parquet')").fetchone()[0]
+    assert n == 6
