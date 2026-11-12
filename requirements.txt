@@ -4,6 +4,8 @@ requests>=2.31
 pytest>=8
 # later stages
 pyspark>=3.5
+pandas>=2.0
+numpy>=1.26
 scikit-learn>=1.4
 lightgbm>=4.3
 pymongo>=4.7
