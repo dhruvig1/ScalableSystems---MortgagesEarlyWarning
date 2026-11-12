@@ -61,3 +61,9 @@ def test_embargo_enforced(tmp_path):
     panel = _panel(tmp_path)
     with pytest.raises(ValueError):
         run(_args(panel, tmp_path / "out2", test_start="2022-06"))  # < train_end + 12 months
+
+
+def test_ablation_flags(tmp_path):
+    panel = _panel(tmp_path)
+    res = run(_args(panel, tmp_path / "o3", current_only=True, no_history=True, disjoint=True))
+    assert res["lgbm"]["auc"] > 0.55  # credit score / LTV still carry signal

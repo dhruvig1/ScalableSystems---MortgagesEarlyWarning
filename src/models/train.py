@@ -50,6 +50,7 @@ NUM = [
     "credit_score", "mi_pct", "num_units", "cltv", "dti", "orig_upb", "ltv",
     "orig_interest_rate", "orig_loan_term", "num_borrowers",
 ]
+HISTORY = ["dq_months", "dq_lag1", "dq_lag3", "dq_max_6m", "dq_max_12m", "n_late_12m"]
 CAT = ["first_time_homebuyer_flag", "occupancy_status", "channel", "property_state",
        "property_type", "loan_purpose"]
 
@@ -124,22 +125,31 @@ def run(a) -> dict:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     df = load_panel(Path(a.panel), a.sample_frac)
+    if getattr(a, "current_only", False):  # score only loans that are fully current today
+        df = df[df.dq_months == 0]
     log.info("Loaded %d labeled rows, %d loans", len(df), df.loan_id.nunique())
     train_all, test = make_split(df, a)
-    if len(train_all) == 0 or len(test) == 0:
-        raise SystemExit(f"Empty split: train={len(train_all)}, test={len(test)}")
-    val = train_all[train_all.hbucket < 10]
-    train = train_all[train_all.hbucket >= 10]
+    if getattr(a, "disjoint", False):  # no loan appears in both train/val and test
+        test = test[test.hbucket < 10]
+        train_all = train_all[train_all.hbucket >= 10]
+        val = train_all[train_all.hbucket < 20]
+        train = train_all[train_all.hbucket >= 20]
+    else:
+        val = train_all[train_all.hbucket < 10]
+        train = train_all[train_all.hbucket >= 10]
+    if len(train) == 0 or len(test) == 0:
+        raise SystemExit(f"Empty split: train={len(train)}, test={len(test)}")
     log.info("train %d (pos %.2f%%) | val %d | test %d (pos %.2f%%)", len(train),
              100 * train.y.mean(), len(val), len(test), 100 * test.y.mean())
-    feats = NUM + CAT
+    num = [c for c in NUM if not (getattr(a, "no_history", False) and c in HISTORY)]
+    feats = num + CAT
     res: dict = {"split": a.split, "n_train": len(train), "n_val": len(val), "n_test": len(test)}
 
     # ---- logistic baseline ----
     lr_train = train.sample(min(len(train), a.max_logit_rows), random_state=0)
     pre = ColumnTransformer([
         ("num", Pipeline([("imp", SimpleImputer(strategy="median", add_indicator=True)),
-                          ("sc", StandardScaler())]), NUM),
+                          ("sc", StandardScaler())]), num),
         ("cat", OneHotEncoder(handle_unknown="ignore", min_frequency=100), CAT)])
     logit = Pipeline([("pre", pre), ("clf", LogisticRegression(max_iter=300, C=1.0))])
     logit.fit(lr_train[feats], lr_train.y)
@@ -189,6 +199,12 @@ def main() -> None:
     ap.add_argument("--sample-frac", type=float, default=0.1, help="fraction of LOANS kept")
     ap.add_argument("--max-logit-rows", type=int, default=1_000_000)
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--current-only", action="store_true",
+                    help="keep only loan-months with dq_months == 0 (early-warning on current loans)")
+    ap.add_argument("--no-history", action="store_true",
+                    help="drop payment-history features (ablation)")
+    ap.add_argument("--disjoint", action="store_true",
+                    help="no loan appears in both train/val and test")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     run(a)
