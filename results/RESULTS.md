@@ -22,6 +22,28 @@ Row counts, labeled rows, positives and delinquency sums identical in all 8 quar
 UPB sum differs by 0.36 on about 1e12 (floating-point summation order). Verdict: OK.
 Single-machine DuckDB (4 vCPU) built 8 quarters (about 150 M rows) in about 3 minutes.
 
+## Ask it twice: state-by-quarter 90+ delinquency rate, full history (silver, 2.9 B rows joined to loan state)
+DuckDB (one machine, SQL over the raw Parquet) vs MongoDB Atlas (aggregation over the stored state-month rollup):
+5,939 state-quarter rows on both sides, 0 missing keys, 0 count mismatches, max rate difference 0.0 -> AGREE.
+Rollup in Atlas: 17,794 state-month documents (mew.state_month_rollup).
+Third engine, Spark SQL (local mode on the VM, 8 GB driver) vs DuckDB on a slice (loans originated 2008 and 2019, all
+reporting months through 2026): 3,996 state-quarter rows, 0 missing keys, 0 count mismatches, max rate difference 0.0 -> AGREE.
+Spark SQL took about 2.5 minutes on the slice. (Cluster-scale Spark is validated by the panel build, which matched DuckDB on 128.6 M rows.)
+Definition: rate = loans 90+ days late (dq_months >= 3) / active loans (UPB > 0, no zero-balance code) at quarter-end months.
+
+## Query latency (VM e2-standard-4 in GCP us-central1; Atlas M0 free tier on AWS us-east-1; wall-clock ms, warm-up excluded)
+| Engine | Query | Runs | p50 | p95 |
+|---|---|---|---|---|
+| DuckDB (Parquet on local disk) | aggregate by state, 2019 vintages (69.1 M panel rows) | 3 | 1050.8 | 1082.0 |
+| DuckDB | one loan's history, partition pruned | 3 | 91.2 | 92.9 |
+| MongoDB | find scored loan by _id | 30 | 29.3 | 29.6 |
+| MongoDB | top 20 riskiest loans in a state | 30 | 29.7 | 30.2 |
+| MongoDB | quarterly delinquency rates for a state (rollup aggregation) | 30 | 61.1 | 65.7 |
+| Atlas Search | full-text over 147 K narratives, top 10 | 30 | 39.4 | 50.1 |
+| Atlas Search | same, filtered to one state | 30 | 39.2 | 43.1 |
+Caveats: Mongo timings include a cross-cloud network hop (about 29 ms floor); the DuckDB scan is warm-cache (files already in the OS cache);
+M0 is a shared tier. Indicative numbers, not a vendor benchmark.
+
 ## Models (time split: train to 2021-06, test from 2022-07, 12-month embargo; 0.2% loan sample)
 Train 3,720,354 rows (1.33% positive) | val 411,135 | test 948,255 (0.71% positive)
 
@@ -63,6 +85,28 @@ Finding (vintage): on loans never seen in training, LightGBM keeps AUC 0.869 and
 Finding (macro): macro inputs barely change ranking (AUC +0.0006) but fix the level of predicted risk.
 Without them the model predicts about 2x the actual rate (it learned the high-delinquency training years).
 Caveats: one run, no confidence intervals, 0.2% sample, test window 2022-2025 is a calm macro period.
+
+## Question 2: do complaint surges lead delinquency? (state-month panel, state and month fixed effects, clustered SE)
+Outcome: change in a state's 90+ delinquency rate (pp) h months after a complaint surge (z-score vs the state's own trailing 12 months),
+controlling for current rate and 3-month momentum. Placebo: surge series shuffled across states within month, 20 reps.
+
+| Series | h (months) | Coef (pp per 1 SD) | p | Largest placebo | Beats placebo |
+|---|---|---|---|---|---|
+| all mortgage | 1 | -0.0044 | 0.010 | 0.0045 | no |
+| all mortgage | 3 | -0.0093 | 0.127 | 0.0115 | no |
+| all mortgage | 6 | -0.0077 | 0.122 | 0.0148 | no |
+| all mortgage | 9 | -0.0061 | 0.283 | 0.0142 | no |
+| all mortgage | 12 | -0.0055 | 0.372 | 0.0223 | no |
+| hardship ("struggling to pay") | 1 | -0.0014 | 0.170 | 0.0050 | no |
+| hardship | 3 | not estimated (SVD did not converge) | | | |
+| hardship | 6 | -0.0078 | 0.038 | 0.0065 | yes |
+| hardship | 9 | -0.0099 | 0.012 | 0.0079 | yes |
+| hardship | 12 | +0.0013 | 0.864 | 0.0124 | no |
+
+Reading: no evidence that complaint surges PRECEDE rises in delinquency. Every all-mortgage coefficient is small, negative and within placebo range.
+The only results that beat the placebo (hardship, 6 and 9 months) are NEGATIVE: a surge is followed by a slightly lower rate (about 0.01 pp per SD),
+the opposite of the early-warning hypothesis. 9 tests were run, so one or two nominal hits are not surprising; treat as weak.
+Caveats: complaints cover all lenders and servicers, delinquency is Freddie Mac loans only; state-month level; association, not causation.
 
 ## Portfolio scoring and stress scenarios (LightGBM + isotonic, June 2026 snapshot)
 Scored 500,000 current loans: mean 12-month PD 0.77%, UPB-weighted 0.81% (recent actual rate 0.71%).

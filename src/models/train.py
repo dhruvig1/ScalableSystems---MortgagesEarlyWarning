@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
 
 import duckdb
@@ -77,7 +78,15 @@ def load_panel(panel: Path, sample_frac: float) -> pd.DataFrame:
              y_12m::INTEGER AS y, (hash(loan_id) // 1000) % 100 AS hbucket, {cols}
       FROM read_parquet('{panel}/*/*.parquet')
       WHERE y_12m IS NOT NULL AND (hash(loan_id) % 1000) < {keep}"""
-    con = duckdb.connect(); con.execute("SET memory_limit='5GB'"); df = con.execute(q).df()
+    con = duckdb.connect(); con.execute("SET memory_limit='5GB'")
+    cache = os.environ.get("MEW_SAMPLE_CACHE")  # reuse the sampled rows across runs
+    if cache:
+        if not Path(cache).exists() or Path(cache).stat().st_size < 1024:
+            tmp = cache + ".tmp"  # write aside, then rename: a crash never leaves a bad cache
+            con.execute(f"COPY ({q}) TO '{tmp}' (FORMAT parquet)")
+            os.replace(tmp, cache)
+        q = f"SELECT * FROM read_parquet('{cache}')"
+    df = con.execute(q).df()
     for c in NUM + macro:
         df[c] = pd.to_numeric(df[c], errors="coerce").astype("float64")
     for c in CAT:

@@ -37,16 +37,26 @@ def predict(booster, iso, df: pd.DataFrame, feats: dict) -> np.ndarray:
     return np.clip(iso.predict(booster.predict(X)), 1e-6, 1 - 1e-6)
 
 
-def latest_snapshot(panel: Path, feats: dict, max_loans: int) -> pd.DataFrame:
+def latest_snapshot(panel: Path, feats: dict, max_loans: int, month: str | None = None) -> pd.DataFrame:
     cols = ", ".join(sorted(set(feats["num"] + feats["cat"] + ["property_state", "orig_upb"])))
-    q = f"""
+    if month:  # known month (e.g. 2026-06-01): skips a whole extra scan of the panel
+        q = f"""
+      SELECT loan_id, rep_month, upb, {cols}
+      FROM read_parquet('{panel}/*/*.parquet')
+      WHERE rep_month = DATE '{month}'
+      ORDER BY hash(loan_id)
+      LIMIT {int(max_loans)}"""
+    else:
+        q = f"""
       WITH last AS (SELECT max(rep_month) AS m FROM read_parquet('{panel}/*/*.parquet'))
       SELECT loan_id, rep_month, upb, {cols}
       FROM read_parquet('{panel}/*/*.parquet'), last
       WHERE rep_month = last.m
       ORDER BY hash(loan_id)
       LIMIT {int(max_loans)}"""  # deterministic pseudo-random subset of the current book
-    df = duckdb.connect().execute(q).df()
+    con = duckdb.connect()
+    con.execute("SET memory_limit='6GB'; SET threads=4; SET preserve_insertion_order=false;")
+    df = con.execute(q).df()
     for c in feats["num"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").astype("float64")
     for c in feats["cat"]:
@@ -60,10 +70,11 @@ def main() -> None:
     ap.add_argument("--models", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--max-loans", type=int, default=500_000)
+    ap.add_argument("--month", default=None, help="YYYY-MM-01; default = latest month in the panel")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     booster, iso, feats = load_model(a.models)
-    df = latest_snapshot(a.panel, feats, a.max_loans)
+    df = latest_snapshot(a.panel, feats, a.max_loans, a.month)
     df["pd_12m"] = predict(booster, iso, df, feats)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(a.out, index=False)

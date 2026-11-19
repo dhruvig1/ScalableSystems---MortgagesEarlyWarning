@@ -65,7 +65,8 @@ def _rel(root: Path, kind: str, sources: list[str] | None) -> str:
 
 def duckdb_quarter(root: Path, sources=None, threads: int = 4) -> pd.DataFrame:
     con = duckdb.connect()
-    con.execute(f"SET threads={threads}")
+    con.execute(f"SET threads={threads}; SET memory_limit='9GB'; "
+                f"SET temp_directory='{os.path.expanduser('~/work/tmp')}'")
     sql = QUARTER_SQL.format(perf=_rel(root, "performance", sources),
                              orig=_rel(root, "origination", sources))
     return con.execute(sql).df()
@@ -73,7 +74,8 @@ def duckdb_quarter(root: Path, sources=None, threads: int = 4) -> pd.DataFrame:
 
 def duckdb_month(root: Path, sources=None, threads: int = 4) -> pd.DataFrame:
     con = duckdb.connect()
-    con.execute(f"SET threads={threads}")
+    con.execute(f"SET threads={threads}; SET memory_limit='9GB'; "
+                f"SET temp_directory='{os.path.expanduser('~/work/tmp')}'")
     sql = MONTH_SQL.format(perf=_rel(root, "performance", sources),
                            orig=_rel(root, "origination", sources))
     return con.execute(sql).df()

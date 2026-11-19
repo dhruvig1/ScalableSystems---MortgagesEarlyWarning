@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -33,8 +35,8 @@ st.title("Mortgage Credit Early-Warning")
 st.caption("Freddie Mac loan-level history + FRED macro + CFPB complaints. "
            "Q1 risk ranking, Q2 complaint lead-lag, Q3 scenarios.")
 
-t1, t2, t3, t4, t5 = st.tabs(["Risk model", "State delinquency", "Complaint lead-lag",
-                              "Scenarios", "Complaint themes"])
+t1, t2, t3, t4, t5, t6 = st.tabs(["Risk model", "State delinquency", "Complaint lead-lag",
+                                  "Scenarios", "Complaint themes", "Live Atlas"])
 
 with t1:
     mp = MOD / "metrics.json"
@@ -118,3 +120,48 @@ with t5:
     ei = OUT / "eda" / "complaints_monthly.png"
     if ei.exists():
         st.image(str(ei))
+
+with t6:
+    st.subheader("Live queries against MongoDB Atlas")
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        st.info("Set MONGODB_URI in the shell that starts Streamlit (a read-only user is enough) "
+                "to enable live Atlas Search and the scored-loan lookup.")
+    else:
+        from pymongo import MongoClient
+        db = MongoClient(uri, serverSelectionTimeoutMS=8000)[os.environ.get("MONGODB_DB", "mew")]
+        st.markdown("**Full-text search over CFPB complaint narratives (Atlas Search)**")
+        c1, c2, c3 = st.columns([3, 1, 2])
+        query = c1.text_input("Search text", "escrow payment increased")
+        state = c2.text_input("State (optional, e.g. TX)", "").strip().upper()
+        theme = c3.selectbox("Claude theme (optional)", [""] + [
+            "payment_hardship", "servicing_error", "escrow", "modification_denial",
+            "foreclosure", "origination_other"])
+        if query:
+            text = {"text": {"query": query, "path": "narrative"}}
+            filt = []
+            if state:
+                filt.append({"equals": {"path": "state", "value": state}})
+            if theme:
+                filt.append({"equals": {"path": "theme", "value": theme}})
+            op = {"compound": {"must": [text], "filter": filt}} if filt else text
+            t0 = time.perf_counter()
+            hits = list(db["complaints"].aggregate([
+                {"$search": {"index": "complaints_search", **op}}, {"$limit": 10},
+                {"$project": {"issue": 1, "state": 1, "theme": 1, "narrative": 1,
+                              "score": {"$meta": "searchScore"}}}]))
+            ms = (time.perf_counter() - t0) * 1000
+            st.caption(f"{len(hits)} results in {ms:.0f} ms (includes network to Atlas)")
+            if hits:
+                df = pd.DataFrame(hits).drop(columns=["_id"])
+                df["narrative"] = df["narrative"].fillna("").str.slice(0, 300)
+                st.dataframe(df, use_container_width=True)
+        st.markdown("**Riskiest scored loans (June 2026 snapshot)**")
+        s = st.text_input("Property state", "IL").strip().upper()
+        rows = list(db["scored_loans"].find({"property_state": s}, {"_id": 1, "pd_12m": 1, "upb": 1,
+                    "credit_score": 1, "ltv": 1, "dti": 1, "dq_months": 1, "loan_age": 1})
+                    .sort("pd_12m", -1).limit(15))
+        if rows:
+            st.dataframe(pd.DataFrame(rows).rename(columns={"_id": "loan_id"}).round(4),
+                         use_container_width=True)
+        st.caption("Scores come from the calibrated LightGBM model (probability of 90+ days late within 12 months).")

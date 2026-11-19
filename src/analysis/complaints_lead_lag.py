@@ -61,6 +61,7 @@ def build_panel(rollup: pd.DataFrame, surge: pd.DataFrame, horizons=range(0, 13)
 
 def fit_horizon(df: pd.DataFrame, h: int) -> dict:
     d = df.dropna(subset=[f"d{h}"]).copy()
+    d = d.replace([np.inf, -np.inf], np.nan).dropna(subset=[f"d{h}", "surge", "rate", "past_change"])
     d["mth"] = d["month"].dt.strftime("%Y-%m")
     m = smf.ols(f"d{h} ~ surge + rate + past_change + C(state) + C(mth)", data=d).fit(
         cov_type="cluster", cov_kwds={"groups": pd.factorize(d["state"])[0]})
@@ -78,7 +79,7 @@ def placebo(df: pd.DataFrame, h: int, reps: int = 20, seed: int = 0) -> list[flo
     return coefs
 
 
-def run(rollup: pd.DataFrame, complaints: pd.DataFrame, horizons=(0, 3, 6, 9, 12),
+def run(rollup: pd.DataFrame, complaints: pd.DataFrame, horizons=(1, 3, 6, 9, 12),
         placebo_reps: int = 20) -> pd.DataFrame:
     c = complaints.copy()
     c["date_received"] = pd.to_datetime(c["date_received"], errors="coerce")
@@ -93,8 +94,12 @@ def run(rollup: pd.DataFrame, complaints: pd.DataFrame, horizons=(0, 3, 6, 9, 12
         counts = sub.groupby(["state", "month"]).size().rename("n").reset_index()
         panel = build_panel(rollup, complaint_surge(counts), horizons)
         for h in horizons:
-            res = fit_horizon(panel, h)
-            pl = placebo(panel, h, placebo_reps)
+            try:
+                res = fit_horizon(panel, h)
+                pl = placebo(panel, h, placebo_reps)
+            except np.linalg.LinAlgError as e:
+                log.warning("skip %s h=%d: %s", name, h, e)
+                continue
             res.update({"series": name, "placebo_abs_mean": float(np.mean(np.abs(pl))),
                         "placebo_abs_max": float(np.max(np.abs(pl))),
                         "beats_placebo": bool(abs(res["coef"]) > np.max(np.abs(pl)))})
