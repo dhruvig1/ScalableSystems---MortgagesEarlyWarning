@@ -41,3 +41,5 @@ Show the Spark job finished on GKE/Dataproc (console screenshot or terminal) and
 - Demo 6 (about 30 s): `python -m src.ingest.cfpb_live --dry-run` to show new complaint counts from CFPB's daily API (metadata only).
 - Show `docs/AGENTS.md` (how Claude was controlled).
 - End with a 30 s repo walkthrough: README, `src/` by stage, `docs/`, `results/`, `dags/`, `infra/`.
+
+- Hosted dashboard (backup if the local one fails): https://scalablesystems---mortgagesearlywarning-7selzvawr4hojizmvkg28m.streamlit.app/
