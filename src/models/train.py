@@ -31,6 +31,7 @@ import logging
 from pathlib import Path
 
 import duckdb
+import joblib
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
@@ -55,16 +56,29 @@ CAT = ["first_time_homebuyer_flag", "occupancy_status", "channel", "property_sta
        "property_type", "loan_purpose"]
 
 
+# Macro columns exist only in panels built by spark_panel.py (state/month FRED join).
+MACRO = ["unemp_rate", "unemp_chg_12m", "hpi_yoy", "mortgage_rate", "rate_gap"]
+
+
+def panel_macro_cols(panel: Path) -> list[str]:
+    have = {r[0] for r in duckdb.connect().execute(
+        f"DESCRIBE SELECT * FROM read_parquet('{panel}/*/*.parquet')").fetchall()}
+    return [c for c in MACRO if c in have]
+
+
 def load_panel(panel: Path, sample_frac: float) -> pd.DataFrame:
-    cols = ", ".join(NUM + CAT)
+    macro = panel_macro_cols(panel)
+    cols = ", ".join(NUM + macro + CAT)
     keep = int(round(sample_frac * 1000))
     q = f"""
-      SELECT loan_id, rep_month, CAST(substr(loan_id, 2, 2) AS INTEGER) + 2000 AS vintage,
-             y_12m::INTEGER AS y, hash(loan_id) % 100 AS hbucket, {cols}
+      SELECT loan_id, rep_month,
+             CASE WHEN CAST(substr(loan_id, 2, 2) AS INTEGER) >= 90 THEN 1900 ELSE 2000 END
+               + CAST(substr(loan_id, 2, 2) AS INTEGER) AS vintage,
+             y_12m::INTEGER AS y, (hash(loan_id) // 1000) % 100 AS hbucket, {cols}
       FROM read_parquet('{panel}/*/*.parquet')
       WHERE y_12m IS NOT NULL AND (hash(loan_id) % 1000) < {keep}"""
-    df = duckdb.connect().execute(q).df()
-    for c in NUM:
+    con = duckdb.connect(); con.execute("SET memory_limit='5GB'"); df = con.execute(q).df()
+    for c in NUM + macro:
         df[c] = pd.to_numeric(df[c], errors="coerce").astype("float64")
     for c in CAT:
         df[c] = df[c].astype("category")  # categories fixed on full frame -> same codes everywhere
@@ -141,7 +155,10 @@ def run(a) -> dict:
         raise SystemExit(f"Empty split: train={len(train)}, test={len(test)}")
     log.info("train %d (pos %.2f%%) | val %d | test %d (pos %.2f%%)", len(train),
              100 * train.y.mean(), len(val), len(test), 100 * test.y.mean())
-    num = [c for c in NUM if not (getattr(a, "no_history", False) and c in HISTORY)]
+    macro = [c for c in MACRO if c in df.columns]
+    if getattr(a, "no_macro", False):
+        macro = []
+    num = [c for c in NUM if not (getattr(a, "no_history", False) and c in HISTORY)] + macro
     feats = num + CAT
     res: dict = {"split": a.split, "n_train": len(train), "n_val": len(val), "n_test": len(test)}
 
@@ -179,6 +196,8 @@ def run(a) -> dict:
                   "gain": gbm.booster_.feature_importance("gain")}).sort_values(
         "gain", ascending=False).to_csv(out / "feature_importance_lgbm.csv", index=False)
     gbm.booster_.save_model(str(out / "lgbm.txt"))
+    joblib.dump(iso, out / "isotonic.joblib")  # used by score.py and the scenario engine
+    (out / "features.json").write_text(json.dumps({"num": num, "cat": CAT, "macro": macro}))
     (out / "metrics.json").write_text(json.dumps(res, indent=2))
     for k in ("logistic", "lgbm", "lgbm_isotonic"):
         m = res[k]
@@ -203,6 +222,8 @@ def main() -> None:
                     help="keep only loan-months with dq_months == 0 (early-warning on current loans)")
     ap.add_argument("--no-history", action="store_true",
                     help="drop payment-history features (ablation)")
+    ap.add_argument("--no-macro", action="store_true",
+                    help="drop FRED macro features (ablation: do they add signal?)")
     ap.add_argument("--disjoint", action="store_true",
                     help="no loan appears in both train/val and test")
     a = ap.parse_args()

@@ -54,6 +54,11 @@ def main() -> None:
         except Exception as e:  # keep going, report at end
             failed.append((sid, str(e)))
         time.sleep(0.2)  # stay well under rate limit
+    if not rows:
+        for sid, err in failed[:5]:
+            log.error("FAILED %s: %s", sid, err)
+        raise SystemExit("No FRED data downloaded. Check FRED_API_KEY (new key active? no spaces?) "
+                         "and network access. First errors are logged above.")
     args.out.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
     con.execute("CREATE TABLE s(series_id VARCHAR, obs_date DATE, value DOUBLE)")

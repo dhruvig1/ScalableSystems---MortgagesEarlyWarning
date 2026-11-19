@@ -1,0 +1,9 @@
+# Spark image for GKE: Spark 3.5 + GCS connector + this repo's code. Build and push, then run
+# infra/submit_gke.sh. No credentials are baked in; use Workload Identity on the cluster.
+FROM apache/spark:3.5.3-python3
+USER root
+ADD https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.22/gcs-connector-hadoop3-2.2.22-shaded.jar /opt/spark/jars/
+RUN chmod 644 /opt/spark/jars/gcs-connector-hadoop3-2.2.22-shaded.jar
+COPY src /opt/mew/src
+ENV PYTHONPATH=/opt/mew
+USER spark

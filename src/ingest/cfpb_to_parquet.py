@@ -47,10 +47,13 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--inputs", nargs="+", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--memory-limit", default="8GB")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args.out.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect()
+    con.execute(f"SET threads={args.threads}; SET memory_limit='{args.memory_limit}';")
     sel = ", ".join(f'"{k}" AS {v}' for k, v in COLS.items())
     with tempfile.TemporaryDirectory() as tmp:
         csvs = collect_csvs(args.inputs, tmp)
@@ -58,15 +61,28 @@ def main() -> None:
             raise SystemExit("No CSV/zip inputs found")
         parts = []
         for i, c in enumerate(csvs):  # order = recency rank (later file wins)
-            parts.append(
-                f"SELECT {sel}, {i} AS file_rank FROM read_csv('{c}', header=true, "
-                f"all_varchar=true, sample_size=-1, ignore_errors=true)")
+            rel = (f"read_csv('{c}', header=true, all_varchar=true, sample_size=-1, "
+                   f"ignore_errors=true)")
+            probe = (f"read_csv('{c}', header=true, all_varchar=true, sample_size=1000, "
+                     f"ignore_errors=true)")  # header only: do not scan the whole file for names
+            have = {r[0] for r in con.execute(f"DESCRIBE SELECT * FROM {probe}").fetchall()}
+            # Files published after 14 Aug 2026 have no narrative column: use NULL there.
+            sel_i = ", ".join(
+                (f'"{k}" AS {v}' if k in have else f"CAST(NULL AS VARCHAR) AS {v}")
+                for k, v in COLS.items())
+            if "Consumer complaint narrative" not in have:
+                log.info("%s has no narrative column; narratives for its rows come from other files", c.name)
+            parts.append(f"SELECT {sel_i}, {i} AS file_rank FROM {rel}")
         union = " UNION ALL ".join(parts)
+        # Keep the newest row per complaint, but keep a narrative if ANY file has one
+        # (newer files drop narratives, older archives have them).
         con.execute(f"""
             COPY (
-              SELECT * EXCLUDE (file_rank, rn) FROM (
+              SELECT * EXCLUDE (file_rank, rn, narr_any, narrative),
+                     narr_any AS narrative FROM (
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY complaint_id
-                                              ORDER BY file_rank DESC) AS rn
+                                              ORDER BY file_rank DESC) AS rn,
+                       MAX(NULLIF(TRIM(narrative), '')) OVER (PARTITION BY complaint_id) AS narr_any
                 FROM ({union})
                 WHERE product ILIKE '%mortgage%'
               ) WHERE rn = 1

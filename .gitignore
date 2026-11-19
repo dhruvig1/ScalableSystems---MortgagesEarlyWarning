@@ -5,3 +5,9 @@ data/
 __pycache__/
 .venv/
 .env
+.env.*
+!.env.example
+.pytest_cache/
+.DS_Store
+# real MCP config with the connection string must live outside the repo
+claude_desktop_config.json

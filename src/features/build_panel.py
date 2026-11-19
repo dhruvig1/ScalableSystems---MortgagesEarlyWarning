@@ -90,7 +90,8 @@ def global_max_month_idx(con, parquet: Path) -> int:
     ).fetchone()[0]
 
 
-def build(parquet: Path, out: Path, threads: int, memory_limit: str, tmp_dir: str | None) -> None:
+def build(parquet: Path, out: Path, threads: int, memory_limit: str, tmp_dir: str | None,
+          only: list[str] | None = None) -> None:
     con = duckdb.connect()
     con.execute(f"SET threads={threads}; SET memory_limit='{memory_limit}';")
     if tmp_dir:
@@ -98,6 +99,8 @@ def build(parquet: Path, out: Path, threads: int, memory_limit: str, tmp_dir: st
     g = global_max_month_idx(con, parquet)
     log.info("Last observed month index: %d (%d-%02d)", g, (g - 1) // 12, (g - 1) % 12 + 1)
     sources = sorted(p.name.split("=", 1)[1] for p in (parquet / "performance").glob("source=*"))
+    if only:  # prefixes like "2019" or "2019Q2"; the last-month cutoff still uses ALL data
+        sources = [x for x in sources if any(x.startswith(o) for o in only)]
     for s in sources:
         dest = out / f"source={s}"
         if dest.exists():
@@ -120,9 +123,10 @@ def main() -> None:
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--memory-limit", default="8GB")
     ap.add_argument("--tmp-dir", default=None)
+    ap.add_argument("--sources", nargs="*", default=None, help="only these sources/prefixes, e.g. 2019")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    build(a.parquet, a.out, a.threads, a.memory_limit, a.tmp_dir)
+    build(a.parquet, a.out, a.threads, a.memory_limit, a.tmp_dir, a.sources)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,97 @@
+<svg viewBox="0 0 980 560" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <style>
+      .box{stroke:#444;stroke-width:1.2;rx:8}
+      .src{fill:#eef3fb} .store{fill:#fff4e0} .proc{fill:#e8f5e9} .ai{fill:#f3e8ff} .out{fill:#ffe9e9}
+      .t{font-weight:bold;font-size:14px} .s{font-size:11.5px;fill:#333}
+      .ar{stroke:#555;stroke-width:1.5;fill:none;marker-end:url(#a)}
+      .lane{font-size:12px;fill:#777;font-weight:bold;letter-spacing:1px}
+    </style>
+  </defs>
+  <text x="20" y="26" class="lane">SOURCES</text>
+  <text x="250" y="26" class="lane">INGEST + STORE</text>
+  <text x="470" y="26" class="lane">TRANSFORM + MODEL</text>
+  <text x="700" y="26" class="lane">SERVE + AI</text>
+
+  <rect class="box src" x="20" y="40" width="190" height="82"/>
+  <text x="32" y="62" class="t">Freddie Mac loans</text>
+  <text x="32" y="80" class="s">1999-2026, ~56M loans</text>
+  <text x="32" y="95" class="s">billions of loan-month rows</text>
+  <text x="32" y="110" class="s">manual download (zip)</text>
+
+  <rect class="box src" x="20" y="150" width="190" height="70"/>
+  <text x="32" y="172" class="t">CFPB complaints</text>
+  <text x="32" y="190" class="s">460K mortgage, 147K narratives</text>
+  <text x="32" y="205" class="s">21 archive zips</text>
+
+  <rect class="box src" x="20" y="248" width="190" height="62"/>
+  <text x="32" y="270" class="t">FRED macro</text>
+  <text x="32" y="288" class="s">state unemployment, HPI, 30y rate</text>
+
+  <rect class="box store" x="250" y="40" width="190" height="110"/>
+  <text x="262" y="62" class="t">DuckDB -> Parquet on GCS</text>
+  <text x="262" y="80" class="s">freddie_to_parquet.py</text>
+  <text x="262" y="95" class="s">partitioned by vintage</text>
+  <text x="262" y="110" class="s">columnar files, SQL, window</text>
+  <text x="262" y="125" class="s">functions, EDA, vintage curves</text>
+
+  <rect class="box store" x="250" y="178" width="190" height="62"/>
+  <text x="262" y="200" class="t">Parquet (complaints, macro)</text>
+  <text x="262" y="218" class="s">cfpb_to_parquet, fred_download</text>
+
+  <rect class="box proc" x="470" y="40" width="200" height="110"/>
+  <text x="482" y="62" class="t">Spark on GKE / Dataproc</text>
+  <text x="482" y="80" class="s">spark_panel.py: 12-month label,</text>
+  <text x="482" y="95" class="s">lags, rolling windows, macro join</text>
+  <text x="482" y="110" class="s">scale out: shuffle by loan_id</text>
+  <text x="482" y="125" class="s">+ Spark SQL cross-check</text>
+
+  <rect class="box proc" x="470" y="178" width="200" height="62"/>
+  <text x="482" y="200" class="t">LightGBM + logistic</text>
+  <text x="482" y="218" class="s">time/vintage split, calibration</text>
+
+  <rect class="box proc" x="470" y="268" width="200" height="62"/>
+  <text x="482" y="290" class="t">Monte Carlo scenarios</text>
+  <text x="482" y="308" class="s">unemployment / rate shocks</text>
+
+  <rect class="box store" x="700" y="40" width="250" height="110"/>
+  <text x="712" y="62" class="t">MongoDB Atlas</text>
+  <text x="712" y="80" class="s">complaints (+ theme), rollups,</text>
+  <text x="712" y="95" class="s">scored loans, scenarios</text>
+  <text x="712" y="110" class="s">Atlas Search over narratives</text>
+  <text x="712" y="125" class="s">aggregation = 3rd check of the number</text>
+
+  <rect class="box ai" x="700" y="178" width="250" height="82"/>
+  <text x="712" y="200" class="t">Claude</text>
+  <text x="712" y="218" class="s">label_complaints.py: themes (capped sample)</text>
+  <text x="712" y="233" class="s">MongoDB MCP server: ad hoc analyst Q&amp;A</text>
+  <text x="712" y="248" class="s">checked vs CFPB issues + hand labels</text>
+
+  <rect class="box out" x="700" y="290" width="250" height="62"/>
+  <text x="712" y="312" class="t">Streamlit dashboard</text>
+  <text x="712" y="330" class="s">risk, state trends, lead-lag, scenarios</text>
+
+  <rect class="box proc" x="250" y="400" width="700" height="56"/>
+  <text x="262" y="422" class="t">Airflow DAG (mew_refresh.py): monthly</text>
+  <text x="262" y="440" class="s">fred -> macro -> spark_panel -> train/score -> 3-way check + scenarios -> load Atlas -> label -> lead-lag</text>
+
+  <rect class="box out" x="20" y="400" width="200" height="56"/>
+  <text x="32" y="422" class="t">Checks ("ask it twice")</text>
+  <text x="32" y="440" class="s">DuckDB = Spark SQL = MongoDB</text>
+
+  <path class="ar" d="M210 80 L250 80"/>
+  <path class="ar" d="M210 185 L250 200"/>
+  <path class="ar" d="M210 278 L250 225"/>
+  <path class="ar" d="M440 95 L470 95"/>
+  <path class="ar" d="M570 150 L570 178"/>
+  <path class="ar" d="M570 240 L570 268"/>
+  <path class="ar" d="M440 210 L700 120"/>
+  <path class="ar" d="M670 95 L700 95"/>
+  <path class="ar" d="M670 300 L700 130"/>
+  <path class="ar" d="M825 150 L825 178"/>
+  <path class="ar" d="M825 260 L825 290"/>
+  <path class="ar" d="M330 150 L330 400" stroke-dasharray="4 3"/>
+</svg>
