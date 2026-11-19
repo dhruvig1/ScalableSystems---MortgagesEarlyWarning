@@ -1,0 +1,11 @@
+[
+  {
+    "pair": "duckdb vs mongodb",
+    "rows_a": 5939,
+    "rows_b": 5939,
+    "missing_keys": 0,
+    "count_mismatches": 0,
+    "max_rate_diff": 0.0,
+    "agree": true
+  }
+]

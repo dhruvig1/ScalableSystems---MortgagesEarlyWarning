@@ -1,0 +1,57 @@
+{
+  "name": "claude_vs_cfpb_issue_mapping",
+  "n": 3000,
+  "accuracy": 0.4593333333333333,
+  "kappa": 0.31218415032550395,
+  "per_class": {
+    "payment_hardship": {
+      "precision": 0.6666666666666666,
+      "recall": 0.05689277899343545,
+      "f1-score": 0.10483870967741936,
+      "support": 457.0
+    },
+    "servicing_error": {
+      "precision": 0.5239642567018684,
+      "recall": 0.6379821958456974,
+      "f1-score": 0.5753791257805531,
+      "support": 1011.0
+    },
+    "escrow": {
+      "precision": 0.39956803455723544,
+      "recall": 0.4322429906542056,
+      "f1-score": 0.4152637485970819,
+      "support": 428.0
+    },
+    "modification_denial": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "foreclosure": {
+      "precision": 0.3539518900343643,
+      "recall": 0.2959770114942529,
+      "f1-score": 0.3223787167449139,
+      "support": 348.0
+    },
+    "origination_other": {
+      "precision": 0.8711018711018711,
+      "recall": 0.5542328042328042,
+      "f1-score": 0.677445432497979,
+      "support": 756.0
+    },
+    "accuracy": 0.4593333333333333,
+    "macro avg": {
+      "precision": 0.4692087865103343,
+      "recall": 0.32955463020339926,
+      "f1-score": 0.3492176222163246,
+      "support": 3000.0
+    },
+    "weighted avg": {
+      "precision": 0.5957126404225752,
+      "recall": 0.4593333333333333,
+      "f1-score": 0.4772296704273243,
+      "support": 3000.0
+    }
+  }
+}

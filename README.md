@@ -274,6 +274,13 @@ network hop (about 29 ms floor); the DuckDB scan is warm-cache; M0 is a shared t
 - How Claude was used and controlled: [`docs/AGENTS.md`](docs/AGENTS.md)
 - Refreshing piece: `python -m src.ingest.cfpb_live --dry-run` (CFPB API, updated daily; metadata only, no narratives, stored in `complaints_live`); daily DAG `mew_cfpb_daily_live` (written, not executed)
 
+## 8a. Dashboard (hosted)
+`streamlit run app/dashboard.py` runs the dashboard. It uses `data/` when present and otherwise the small
+snapshot of result files in `app/demo_data/`, so it also runs on Streamlit Community Cloud
+(main file `app/dashboard.py`, dependencies in `app/requirements.txt`). The "Live Atlas" tab needs a
+`MONGODB_URI` secret for a read-only database user; it is set in the hosting settings, never in the repo.
+Live URL: _add after deploying_
+
 ## 8b. Limits
 
 Complaints cover all lenders while loans are Freddie Mac only, so they join at state-month level. Narratives are about a third of

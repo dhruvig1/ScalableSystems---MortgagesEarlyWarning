@@ -1,7 +1,9 @@
 """Streamlit dashboard over the pipeline outputs.
 
-Run:  streamlit run app/dashboard.py -- --outputs data/outputs --models data/models
-Reads only local files written by the pipeline (no keys needed), so it works offline for the demo.
+Run:  streamlit run app/dashboard.py            (uses data/ if present, else the small snapshot in app/demo_data/)
+      streamlit run app/dashboard.py -- --outputs data/outputs --models data/models
+The first five tabs read local files only. The "Live Atlas" tab needs MONGODB_URI (a read-only user).
+app/demo_data/ holds a copy of the small result files so the hosted version works without the full data.
 """
 from __future__ import annotations
 
@@ -17,8 +19,10 @@ import streamlit as st
 
 def args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--outputs", default="data/outputs")
-    ap.add_argument("--models", default="data/models")
+    here = Path(__file__).parent / "demo_data"
+    have = Path("data/outputs").exists()
+    ap.add_argument("--outputs", default="data/outputs" if have else str(here / "outputs"))
+    ap.add_argument("--models", default="data/models" if have else str(here / "models"))
     return ap.parse_known_args()[0]
 
 
