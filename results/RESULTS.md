@@ -128,7 +128,7 @@ not captured. Treat as a lower bound on macro sensitivity, not a forecast. Bands
 not model uncertainty.
 
 ## Complaint themes (Claude Haiku 5.5, 3,000 complaints, 6 themes)
-- Human reference: 70 complaints labeled by an independent rater
+- Human reference: 70 complaints labeled by an independent rater, blind (saw only the complaint text; did not see Claude's labels or know a model was involved)
 - Agreement (6 themes): 65.7%, Cohen's kappa 0.556; merged 4 groups: 70.0%
 - Author's own first pass (200 rows): 41.5% (kappa 0.22); same labeler vs own second pass on 70 rows: 41.4%
   The first pass contained clear errors (for example "closing on a mortgage" labeled foreclosure).

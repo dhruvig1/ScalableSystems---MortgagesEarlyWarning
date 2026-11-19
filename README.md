@@ -52,6 +52,10 @@ values) happens at bronze to silver; modeling and serving happen at silver to go
 | CFPB Consumer Complaint Database | CFPB complaint archive page; zips into `data/raw/cfpb/` | 464,583 mortgage complaints, 147,249 with a narrative |
 | FRED | Free API key; `export FRED_API_KEY=...` | 103 series, 44,468 values (state unemployment, house price index, 30-year rate) |
 
+Freddie Mac does not publish loan counts per quarter. Coverage (Jan 1999 to Jun 2026) matches what it states; its headline
+"about 56 million mortgages" includes the Non-Standard dataset, which we did not use, so it is not a like-for-like check
+(details in `docs/data_reconciliation.md`).
+
 Hard parts and how they are handled: headerless files and per-year layout changes (layout detected
 per file and logged), coded unknowns like 9999 (set to NULL, never imputed), rare events and open
 loans (fixed 12-month label, last 12 months unlabeled, time split with a 12-month embargo),
@@ -125,7 +129,7 @@ python -m src.serve.mongo_load scenarios --csv data/outputs/scenario_summary.csv
 python -m src.queries.state_quarter --parquet data/parquet --out data/outputs --mongo          # full history
 python -m src.queries.state_quarter --parquet data/parquet --out data/outputs_slice --spark \
        --sources 2008Q1 2008Q2 2008Q3 2008Q4 2019Q1 2019Q2 2019Q3 2019Q4                     # Spark SQL slice
-python -m src.queries.loan_counts --parquet data/parquet --published docs/freddie_published_counts.csv
+python -m src.queries.loan_counts --parquet data/parquet      # join integrity; see docs/data_reconciliation.md
 
 # 7. Question 2, benchmark and the dashboard
 python -m src.analysis.complaints_lead_lag --rollup data/outputs/state_month_rollup.parquet \
@@ -244,6 +248,8 @@ foreclosure, origination/other), stored on the Atlas documents so Atlas Search c
 | vs independent human rater | 70 | 65.7% (70.0% with overlapping themes merged) | 0.56 |
 | vs CFPB issue-category mapping (weak sanity check) | 3,000 | 46% | 0.31 |
 
+The independent rater labeled 70 randomly drawn complaints blind: they saw only the complaint text, never Claude's labels,
+and did not know the labels were being compared with a model's.
 An earlier 200-row pass labeled by the project author agreed 41.5%; the same rater agreed with their own later labels only 41%,
 and the pass contained clear mistakes, so the independent rater is the reference. The themes overlap (escrow vs servicing error,
 hardship vs modification), which caps human agreement too. Treat the labels as a coarse aid for search, not a measurement.
@@ -263,7 +269,12 @@ hardship vs modification), which caps human agreement too. Treat the labels as a
 Analytic scans suit Parquet and DuckDB; key lookups and text search suit Mongo and Atlas Search. Mongo timings include a cross-cloud
 network hop (about 29 ms floor); the DuckDB scan is warm-cache; M0 is a shared tier. Indicative numbers only.
 
-## 8. Limits
+## 8. Queries, agent controls and refresh
+- Key queries with results: [`docs/queries.md`](docs/queries.md)
+- How Claude was used and controlled: [`docs/AGENTS.md`](docs/AGENTS.md)
+- Refreshing piece: `python -m src.ingest.cfpb_live --dry-run` (CFPB API, updated daily; metadata only, no narratives, stored in `complaints_live`); daily DAG `mew_cfpb_daily_live` (written, not executed)
+
+## 8b. Limits
 
 Complaints cover all lenders while loans are Freddie Mac only, so they join at state-month level. Narratives are about a third of
 complaints and exist only from March 2015. Scenario results inherit the model's learned macro sensitivity and hold payment history

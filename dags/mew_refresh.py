@@ -76,3 +76,18 @@ with DAG(
     [fred, cfpb] >> macro >> spark_panel >> train >> [checks, scenarios]
     cfpb >> mongo >> label
     [checks, scenarios] >> leadlag
+
+
+# Daily refresh: CFPB's database updates daily, so pull only new complaints and label them.
+# Written, not executed by Airflow; the same two commands were run by hand.
+with DAG(
+    dag_id="mew_cfpb_daily_live",
+    start_date=datetime(2026, 12, 1),
+    schedule="0 7 * * *",
+    catchup=False,
+    default_args=default_args,
+    tags=["mortgage", "early-warning", "live"],
+) as live_dag:
+    pull = BashOperator(
+        task_id="pull_new_complaints",
+        bash_command=f"cd {HOME} && python -m src.ingest.cfpb_live  ")
